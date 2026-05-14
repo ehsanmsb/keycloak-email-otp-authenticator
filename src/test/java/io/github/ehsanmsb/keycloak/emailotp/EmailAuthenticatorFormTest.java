@@ -16,6 +16,7 @@ import org.keycloak.models.AuthenticationExecutionModel;
 import org.keycloak.models.AuthenticatorConfigModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserSessionProvider;
 import org.keycloak.models.UserModel;
 import org.keycloak.services.managers.BruteForceProtector;
 import org.keycloak.sessions.AuthenticationSessionModel;
@@ -94,6 +95,34 @@ class EmailAuthenticatorFormTest {
     }
 
     @Test
+    @DisplayName("Should leave OTP form and clear sessions when user becomes blocked")
+    void testInvalidCodeRedirectsWhenUserBlocked() {
+        TestableForm form = new TestableForm();
+        AuthenticationFlowContext context = mockContextWithSubmittedCode("000000");
+        AuthenticationSessionModel session = context.getAuthenticationSession();
+        RealmModel realm = context.getRealm();
+        UserModel user = context.getUser();
+        BruteForceProtector protector = context.getProtector();
+        KeycloakSession keycloakSession = context.getSession();
+
+        when(session.getAuthNote(EmailConstants.CODE)).thenReturn(OtpHashUtils.hash("123456"));
+        when(session.getAuthNote(EmailConstants.CODE_TTL))
+                .thenReturn(String.valueOf(System.currentTimeMillis() + 300_000));
+        when(realm.isBruteForceProtected()).thenReturn(true);
+        when(protector.isTemporarilyDisabled(keycloakSession, realm, user)).thenReturn(true);
+
+        form.action(context);
+
+        verify(session).removeAuthNote(EmailConstants.CODE);
+        verify(session).removeAuthNote(EmailConstants.CODE_TTL);
+        verify(session).removeAuthNote(EmailConstants.CODE_RESEND_AVAILABLE_AFTER);
+        verify(keycloakSession.sessions()).removeUserSessions(realm, user);
+        verify(context).clearUser();
+        verify(context).forkWithErrorMessage(any());
+        verify(context, never()).failureChallenge(eq(AuthenticationFlowError.INVALID_CREDENTIALS), any());
+    }
+
+    @Test
     @DisplayName("Should reset expired code")
     void testExpiredCodeResetsCode() {
         TestableForm form = new TestableForm();
@@ -123,16 +152,20 @@ class EmailAuthenticatorFormTest {
         AuthenticationSessionModel session = mock(AuthenticationSessionModel.class);
         RealmModel realm = mock(RealmModel.class);
         UserModel user = mock(UserModel.class);
+        KeycloakSession keycloakSession = mock(KeycloakSession.class);
+        UserSessionProvider userSessionProvider = mock(UserSessionProvider.class);
         BruteForceProtector protector = mock(BruteForceProtector.class);
         ClientConnection connection = mock(ClientConnection.class);
         UriInfo uriInfo = mock(UriInfo.class);
 
+        when(context.getSession()).thenReturn(keycloakSession);
         when(context.getAuthenticationSession()).thenReturn(session);
         when(context.getRealm()).thenReturn(realm);
         when(context.getUser()).thenReturn(user);
         when(context.getProtector()).thenReturn(protector);
         when(context.getConnection()).thenReturn(connection);
         when(context.getUriInfo()).thenReturn(uriInfo);
+        when(keycloakSession.sessions()).thenReturn(userSessionProvider);
 
         HttpRequest httpRequest = mock(HttpRequest.class);
         MultivaluedHashMap<String, String> formData = new MultivaluedHashMap<>();
@@ -169,7 +202,7 @@ class EmailAuthenticatorFormTest {
         }
 
         String testDisabledByBruteForceError() {
-            return disabledByBruteForceError();
+            return disabledByBruteForceError("user_temporarily_disabled");
         }
     }
 }

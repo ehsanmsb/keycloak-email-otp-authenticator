@@ -65,6 +65,10 @@ public class EmailAuthenticatorForm extends AbstractUsernameFormAuthenticator {
      */
     @Override
     public void authenticate(AuthenticationFlowContext context) {
+        if (isUserBlocked(context, context.getUser())) {
+            handleBlockedUser(context, context.getUser());
+            return;
+        }
         context.challenge(challenge(context, null));
     }
 
@@ -176,6 +180,11 @@ public class EmailAuthenticatorForm extends AbstractUsernameFormAuthenticator {
     @Override
     public void action(AuthenticationFlowContext context) {
         UserModel userModel = context.getUser();
+        if (isUserBlocked(context, userModel)) {
+            handleBlockedUser(context, userModel);
+            return;
+        }
+
         if (!enabledUser(context, userModel)) {
             // error in context is set in enabledUser/isDisabledByBruteForce
             return;
@@ -272,6 +281,11 @@ public class EmailAuthenticatorForm extends AbstractUsernameFormAuthenticator {
         // The category must be "otp" so modern Keycloak counts it as a
         // secondary-authentication failure.
         recordBruteForceFailure(context, user);
+        if (isUserBlocked(context, user)) {
+            handleBlockedUser(context, user);
+            return false;
+        }
+
         Response challengeResponse = challenge(context, Messages.INVALID_ACCESS_CODE, EmailConstants.CODE);
         context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS, challengeResponse);
         return false;
@@ -285,6 +299,32 @@ public class EmailAuthenticatorForm extends AbstractUsernameFormAuthenticator {
                     context.getConnection(),
                     context.getUriInfo(),
                     OTP_AUTHENTICATION_CATEGORY);
+        }
+    }
+
+    private boolean isUserBlocked(AuthenticationFlowContext context, UserModel user) {
+        if (user == null || context.getProtector() == null || !context.getRealm().isBruteForceProtected()) {
+            return false;
+        }
+        return context.getProtector().isTemporarilyDisabled(context.getSession(), context.getRealm(), user)
+                || context.getProtector().isPermanentlyLockedOut(context.getSession(), context.getRealm(), user);
+    }
+
+    private void handleBlockedUser(AuthenticationFlowContext context, UserModel user) {
+        resetEmailCode(context);
+        terminateActiveSessions(context, user);
+        context.clearUser();
+        context.forkWithErrorMessage(new FormMessage(null, "email-authenticator-account-blocked"));
+    }
+
+    private void terminateActiveSessions(AuthenticationFlowContext context, UserModel user) {
+        if (user == null) {
+            return;
+        }
+        try {
+            context.getSession().sessions().removeUserSessions(context.getRealm(), user);
+        } catch (RuntimeException ex) {
+            logger.warnf(ex, "Failed to remove active sessions for locked user %s", user.getId());
         }
     }
 
@@ -334,7 +374,8 @@ public class EmailAuthenticatorForm extends AbstractUsernameFormAuthenticator {
         }
     }
 
-    protected String disabledByBruteForceError() {
+    @Override
+    protected String disabledByBruteForceError(String eventError) {
         return "email-authenticator-account-blocked";
     }
 
