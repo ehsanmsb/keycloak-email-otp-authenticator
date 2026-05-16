@@ -23,7 +23,7 @@ mvn clean package
 The provider jar is created at:
 
 ```text
-target/keycloak-email-otp-authenticator-v1.0.0.jar
+target/keycloak-email-otp-authenticator-v<version>.jar
 ```
 
 ## Install
@@ -31,7 +31,7 @@ target/keycloak-email-otp-authenticator-v1.0.0.jar
 Copy the jar into Keycloak's providers directory:
 
 ```bash
-cp target/keycloak-email-otp-authenticator-v1.0.0.jar <KEYCLOAK_HOME>/providers/
+cp target/keycloak-email-otp-authenticator-v<version>.jar <KEYCLOAK_HOME>/providers/
 ```
 
 Then rebuild or restart Keycloak:
@@ -97,6 +97,16 @@ Open Mailpit at:
 ```text
 http://127.0.0.1:8025
 ```
+
+## Releases
+
+Pull requests are validated with GitHub Actions. After a pull request is merged into `main`, the release workflow uses Conventional Commit messages to determine the next semantic version:
+
+- `fix:` creates a patch release.
+- `feat:` creates a minor release.
+- commits with `!` or `BREAKING CHANGE:` create a major release.
+
+The workflow creates a Git tag, creates a GitHub release, builds the provider with the release version, and uploads the generated jar to the release assets.
 
 ## License
 
