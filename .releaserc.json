@@ -27,8 +27,8 @@
       {
         "assets": [
           {
-            "path": "target/keycloak-email-otp-authenticator-v${nextRelease.version}.jar",
-            "label": "Keycloak Email OTP Authenticator ${nextRelease.version}"
+            "path": "target/keycloak-email-otp-authenticator-v*.jar",
+            "label": "Keycloak Email OTP Authenticator JAR"
           }
         ]
       }
